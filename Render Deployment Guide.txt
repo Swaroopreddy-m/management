@@ -1,81 +1,124 @@
-# Render Deployment & Online Verification Guide
+# Render Deployment & Verification Guide: Hierarchical Multi-Organization Management
 
-This guide provides step-by-step instructions to deploy the migrated Spring Boot application and its PostgreSQL database onto Render, followed by steps to verify the online endpoints.
+This guide provides step-by-step instructions to deploy the hierarchical multi-organization management system on Render, completely isolated from any previous deployments.
 
 ---
 
-## Step 1: Deploy a PostgreSQL Database on Render
+## Step 1: Deploy a Dedicated PostgreSQL Database on Render
 
 1. Log into your [Render Dashboard](https://dashboard.render.com).
 2. Click **New +** and select **PostgreSQL**.
 3. Configure the database details:
-   - **Name**: `employee-db`
+   - **Name**: `management-hierarchy-db`
    - **Database Name**: `employee_db`
-   - **User**: (Auto-generated or choose one)
-   - **Region**: Choose the same region you will use for the web service (e.g., Oregon US-West or Frankfurt EU).
+   - **User**: `postgres` (or auto-generated)
+   - **Region**: Choose your nearest region (e.g., Oregon US-West or Frankfurt EU).
 4. Click **Create Database**.
-5. Once active, note the **Internal Database URL** (for Render services) and **External Database URL** (for local administration/verification).
+5. Once provisioned, copy the **Internal Database URL** (e.g. `jdbc:postgresql://management-hierarchy-db:5432/employee_db`).
 
 ---
 
-## Step 2: Initialize Database Schema and Seed Data
+## Step 2: Database Schema & Automated Seeding
 
-To populate the Render database with the initial tables and sample data:
-1. Connect to the Render database using any PostgreSQL client (e.g. `psql` or DBeaver) using the **External Database URL**.
-2. Run the script found in [schema.sql](file:///c:/Users/user/Documents/Projects/employee-management/schema.sql) to create the tables, indices, and seed data.
+The application automatically checks and provisions all hierarchical tables and initial seed data on startup via `DataInitializer.java`.
+Alternatively, you may run [schema.sql](file:///c:/Users/user/Documents/Projects/employee-management/schema.sql) manually via `psql` or DBeaver using the External Database URL:
+- Super Entities: `SE001` (Global Enterprise Group)
+- Super Admins: `SA001` (Enterprise Super Admin)
+- Organizations: `ORG001` (Apex Solutions), `ORG002` (Beta Industries)
+- Organizational Entities: `BR001` (Apex HQ), `BR002` (Apex West Coast), `DEPT001`, `STR001`, `BR003`
+- Page Registry: `DASHBOARD`, `EMPLOYEE_MANAGEMENT`, `USER_MANAGEMENT`, `BRANCH_MANAGEMENT`, `DEPARTMENT_MANAGEMENT`, `STORE_MANAGEMENT`, `REPORTS`, `SETTINGS`, `DYNAMIC_PAGES`
+- Permission Groups & Org Approvals for `ORG001`
+- Seed users: `developer` (dev123), `superadmin` (admin123), `US001` (password123)
 
 ---
 
-## Step 3: Deploy the Spring Boot Web Service on Render
+## Step 3: Deploy Web Service on Render
 
-Render builds Java projects using Maven out-of-the-box.
-
-1. Push your updated codebase (with the PostgreSQL dependencies and properties) to a repository on **GitHub** or **GitLab**.
-2. On Render Dashboard, click **New +** and select **Web Service**.
-3. Connect your repository.
-4. Configure the Web Service settings:
-   - **Name**: `employee-management-service`
-   - **Language**: `Java` (or Docker if deploying via container)
+1. On the Render Dashboard, click **New +** and select **Web Service**.
+2. Connect the target repository: `Swaroopreddy-m/management` (or `employee-management`).
+3. Set **Branch**: `feature/hierarchy-permissions`.
+4. Configure service parameters:
+   - **Name**: `management-service`
+   - **Environment**: `Java` (or `Docker` via repository `Dockerfile`)
    - **Build Command**: `./mvnw clean package -DskipTests`
-   - **Start Command**: `java -jar target/employee-0.0.1-SNAPSHOT.war` (or `.jar` if configured as jar)
-5. Scroll down to **Environment Variables** and add the following:
-   - `PORT`: `8080` (Render will automatically route external traffic to this port)
-   - `SPRING_DATASOURCE_URL`: `jdbc:postgresql://<RENDER_INTERNAL_DB_HOST>:<PORT>/employee_db` (Copy this from your Render PostgreSQL Internal Connection String)
+   - **Start Command**: `java -jar target/employee-0.0.1-SNAPSHOT.jar`
+5. Configure **Environment Variables**:
+   - `PORT`: `8080`
+   - `SPRING_DATASOURCE_URL`: `jdbc:postgresql://<RENDER_INTERNAL_HOST>:5432/employee_db`
    - `SPRING_DATASOURCE_USERNAME`: `<RENDER_DB_USER>`
    - `SPRING_DATASOURCE_PASSWORD`: `<RENDER_DB_PASSWORD>`
 6. Click **Create Web Service**.
-7. Wait for the build and deployment logs to show "Your service is live".
 
 ---
 
-## Step 4: Online API Verification
+## Step 4: Online Endpoints & Workflow Verification
 
-Once deployed, verify all endpoints using your service's public URL (e.g., `https://employee-management-service.onrender.com`):
+Once live (e.g. at `https://management-service.onrender.com`), verify:
 
-### 1. Database-Backed Authentication
+### 1. Interactive Portal Web UI
+Open your browser and navigate to:
+`https://management-service.onrender.com/portal`
+- Use the **Active Role Context** dropdown to test Developer, Super Admin, Org Admin, and Staff User perspectives live.
+- Observe how the **Dynamic Navigation Bar** updates dynamically based on effective permissions!
+
+### 2. Authentication & Effective Permission Calculation
 ```bash
-curl -X POST https://employee-management-service.onrender.com/api/auth/login \
+curl -X POST https://management-service.onrender.com/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"userId": "US001", "password": "password123"}'
 ```
-- **Expected response**: `{"status": "LOGIN_SUCCESS"}`
-
-### 2. Employee CRUD (HTTP Basic Authentication)
-```bash
-curl -X GET https://employee-management-service.onrender.com/api/employees \
-  -u admin:admin123
+Expected response:
+```json
+{
+  "status": "LOGIN_SUCCESS",
+  "userId": "US001",
+  "role": "ORG_ADMIN",
+  "organizationId": "ORG001",
+  "permissions": { ... }
+}
 ```
-- **Expected response**: JSON array of employees.
 
-### 3. User Master Details
+### 3. Dynamic Navigation Endpoint
 ```bash
-curl -X GET https://employee-management-service.onrender.com/api/users
+curl -X GET https://management-service.onrender.com/api/navigation \
+  -H "X-User-Id: US001" \
+  -H "X-Organization-Id: ORG001"
 ```
-- **Expected response**: JSON array of users.
 
-### 4. Dynamic Page Builder Rendering
-1. Open a browser and visit:
-   - Capture Page: `https://employee-management-service.onrender.com/page/capture`
-   - Confirm Page: `https://employee-management-service.onrender.com/page/confirm`
-   - Acknowledge Page: `https://employee-management-service.onrender.com/page/acknowledge`
-2. Verify that the correct inputs and layouts render dynamically based on the configuration.
+### 4. Developer Dynamic Page Registry
+```bash
+curl -X GET https://management-service.onrender.com/api/developer/pages
+```
+
+### 5. Super Admin Organization Management & Access Requests
+```bash
+# List organizations
+curl -X GET https://management-service.onrender.com/api/super-admin/organizations
+
+# List pending access requests
+curl -X GET https://management-service.onrender.com/api/super-admin/requests?status=PENDING
+```
+
+### 6. Org Admin Console & Group Permissions
+```bash
+# List pages approved by Super Admin for ORG001
+curl -X GET https://management-service.onrender.com/api/org-admin/approved-pages \
+  -H "X-Organization-Id: ORG001"
+
+# List branches, departments, stores
+curl -X GET https://management-service.onrender.com/api/org-admin/entities \
+  -H "X-Organization-Id: ORG001"
+```
+
+### 7. Scoped Employee CRUD & Entity Enforcement
+```bash
+# List employees in ORG001
+curl -X GET https://management-service.onrender.com/api/employees?organizationId=ORG001 \
+  -H "X-User-Id: US001" \
+  -H "X-Organization-Id: ORG001"
+```
+
+### 8. Dynamic Page Builder
+- `https://management-service.onrender.com/page/capture`
+- `https://management-service.onrender.com/page/confirm`
+- `https://management-service.onrender.com/page/acknowledge`

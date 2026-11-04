@@ -55,6 +55,12 @@ public class UserMaster {
     @Column(name = "OTHERS", length = 100)
     private String others;
 
+    @Column(name = "ORGANIZATION_ID", length = 64)
+    private String organizationId;
+
+    @Column(name = "USER_ROLE", length = 50)
+    private String userRole = "USER"; // DEVELOPER, SUPER_ENTITY, SUPER_ADMIN, ORG_ADMIN, USER
+
     // ✅ Getters and Setters
     public String getCustomerId() { return customerId; }
     public void setCustomerId(String customerId) { this.customerId = customerId; }
@@ -103,4 +109,10 @@ public class UserMaster {
 
     public String getOthers() { return others; }
     public void setOthers(String others) { this.others = others; }
+
+    public String getOrganizationId() { return organizationId; }
+    public void setOrganizationId(String organizationId) { this.organizationId = organizationId; }
+
+    public String getUserRole() { return userRole; }
+    public void setUserRole(String userRole) { this.userRole = userRole; }
 }
